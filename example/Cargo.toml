@@ -6,6 +6,7 @@ version = "0.0.0"
 [dependencies]
 shlrt = {path = "../shlrt", version = "0.0.1"}
 shlrt-macros = {path = "../shlrt-macros", version = "0.0.1"}
+lazy_static = "1.4.0"
 
 [[example]]
 name = "tcp_echo"
