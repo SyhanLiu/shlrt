@@ -1,8 +1,8 @@
 [workspace]
 
 members = [
-    "rrt",
-    "rrt-macros",
+    "shlrt",
+    "shlrt-macros",
 
     "example"
 ]

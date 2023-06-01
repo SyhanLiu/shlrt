@@ -1,11 +1,11 @@
 [package]
-name = "rrt"
+name = "shlrt"
 version = "0.0.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rrt-macros = {path="../rrt-macros", optional = true}
+shlrt-macros = {path= "../shlrt-macros"}
 libc = "0.2.144"
 io-uring = "0.6.0"

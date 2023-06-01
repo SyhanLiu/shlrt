@@ -1,10 +1,10 @@
 [package]
 authors = ["Syhan <liusenhnn@gmail.com>"]
-name = "monoio-macros"
+name = "shlrt-macros"
 version = "0.0.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
-description = "Rrt proc macros"
+description = "shlrt proc macros"
 
 [lib]
 proc-macro = true
