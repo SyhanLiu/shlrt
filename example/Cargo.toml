@@ -1,0 +1,12 @@
+[package]
+edition = "2021"
+name = "rrt-example"
+version = "0.0.0"
+
+[dev-dependencies]
+rrt = {path = "../rrt", version = "0.0.1"}
+rrt-macros = {path = "../rrt-macros", version = "0.0.1"}
+
+[[example]]
+name = "tcp_echo"
+path = "tcp_echo.rs"
