@@ -7,7 +7,12 @@ version = "0.0.0"
 shlrt = {path = "../shlrt", version = "0.0.1"}
 shlrt-macros = {path = "../shlrt-macros", version = "0.0.1"}
 lazy_static = "1.4.0"
+bitflags = "2.3.1"
 
 [[example]]
 name = "tcp_echo"
 path = "tcp_echo.rs"
+
+[[example]]
+name = "learn_test"
+path = "learn_test.rs"
