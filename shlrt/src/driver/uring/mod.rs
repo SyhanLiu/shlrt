@@ -1,16 +1,27 @@
 use std::cell::{RefCell, UnsafeCell};
 use std::io;
 use std::mem::{ManuallyDrop, MaybeUninit};
+use std::ops::{Deref, DerefMut};
 use std::os::fd::RawFd;
 use std::ptr::addr_of_mut;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::task::{Context, Poll};
+use io_uring::cqueue;
 use io_uring::types::Timespec;
 use libc::eventfd;
+use crate::driver::op::{CompletionMeta, Op, OpAble};
 use crate::driver::uring::lifecycle::Lifecycle;
 
 mod waker;
 mod lifecycle;
+
+/// TLS变量，每个线程一个io_uring实例
+// thread_local!(pub(crate) static CURRENT = ThreadLocalUring{});
+
+pub(crate) struct ThreadLocalUring {
+    uring: std::rc::Rc<std::cell::UnsafeCell<Uring>>,
+}
 
 /// 保存所有的io_uring操作结构，当io_uring关闭时，需要
 struct Ops {
@@ -28,8 +39,10 @@ impl Ops {
     }
 
     fn new_with_max_size(max_size: usize) -> Self {
-        let mut array = Vec::new();
-        array.resize(max_size, None);
+        let mut array = Vec::<Option<Lifecycle>>::new();
+        for _ in 0..max_size+1 {
+            array.push(None);
+        }
         Ops {
             array,
             current_index: 0,
@@ -42,7 +55,7 @@ impl Ops {
         let mut index: i64 = -1;
 
         if self.num == self.cap {
-            index
+            return index;
         }
 
         // 循环数组，找到一个可用位置
@@ -67,10 +80,21 @@ impl Ops {
         }
     }
 
-    // pub(crate) fn get()
+    /// 根据index获取，在数组中的指针和位置
+    pub(crate) unsafe fn get(&mut self, index: usize) -> Option<LifecycleRef> {
+        return if let Some(_) = self.array.get(index) {
+            let mut lc = LifecycleRef { index, ptr: self };
+            Some(lc)
+        } else {
+            None
+        }
+    }
 
     fn complete(&mut self, index: usize, result: io::Result<u32>, flags: u32) {
-        let lifecycle = unsafe {  };
+        let lifecycle = unsafe {
+            self.get(index).unwrap_unchecked()
+        };
+        lifecycle.complete(result, flags);
     }
 }
 
@@ -80,14 +104,111 @@ pub(crate) struct LifecycleRef<'a> {
 }
 
 impl<'a> LifecycleRef<'a> {
-    pub(crate)  fn remove(self) -> Lifecycle {
+    pub(crate) fn remove(self) -> Lifecycle {
         self.ptr.remove(self.index)
+    }
+
+    /// io_uring操作完成时执行该函数，修改状态，或者唤醒协程
+    pub(crate) fn complete(mut self, result: io::Result<u32>, flags: u32) {
+        let mut_ref = &mut(*self);
+        match mut_ref {
+            Lifecycle::Submitted => {
+                *mut_ref = Lifecycle::Completed(result, flags);
+            },
+            Lifecycle::Waiting(_) => {
+                let old = std::mem::replace(mut_ref, Lifecycle::Completed(result, flags));
+                match old {
+                    Lifecycle::Waiting(waker) => {
+                        waker.wake();
+                    },
+                    _ => unsafe { std::hint::unreachable_unchecked() },
+                };
+            },
+            Lifecycle::Ignored(_) => {
+                self.remove();
+            },
+            Lifecycle::Completed(..) => unsafe { std::hint::unreachable_unchecked() },
+        }
+    }
+
+    /// 轮询操作事件
+    pub(crate) fn poll_op(mut self, cx: &mut Context<'a>) -> Poll<CompletionMeta> {
+        let mut_ref = &mut(*self);
+        match mut_ref {
+            Lifecycle::Submitted => {
+                *mut_ref = Lifecycle::Waiting(cx.waker().clone());
+                return Poll::Pending;
+            },
+            Lifecycle::Waiting(waker) => {
+                if !waker.will_wake(cx.waker()) {
+                    *mut_ref = Lifecycle::Waiting(cx.waker().clone());
+                }
+                return Poll::Pending;
+            },
+            _ => {}
+        }
+
+        match self.remove() {
+            Lifecycle::Completed(result, flags) => Poll::Ready(CompletionMeta{ result, flags }),
+            _ => unsafe { std::hint::unreachable_unchecked() }
+        }
+    }
+
+    // TODO 这个接口有什么用呢？？？？？？
+    pub(crate) fn drop_op<T: 'static>(mut self, data: &mut Option<T>) -> bool {
+        let mut_ref = &mut(*self);
+        match mut_ref {
+            Lifecycle::Submitted | Lifecycle::Waiting(_) => {
+                if let Some(data) = data.take() {
+                    *mut_ref = Lifecycle::Ignored(Box::new(data));
+                } else {
+                    // TODO 需要修改，先要搞清楚这个地方有什么作用
+                    // *mut_ref = Lifecycle::Ignored(Box::new(T));
+                }
+                return false;
+            }
+            Lifecycle::Completed(..) => {
+                self.remove();
+            }
+            Lifecycle::Ignored(_) => {
+                unsafe { std::hint::unreachable_unchecked() }
+            }
+        }
+        true
     }
 }
 
 impl<'a> AsRef<Lifecycle> for LifecycleRef<'a> {
     fn as_ref(&self) -> &Lifecycle {
-        todo!()
+        unsafe {
+            self.ptr.array[self.index].as_ref().unwrap_unchecked()
+        }
+    }
+}
+
+impl<'a> Deref for LifecycleRef<'a> {
+    type Target = Lifecycle;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe {
+            self.ptr.array[self.index].as_ref().unwrap_unchecked()
+        }
+    }
+}
+
+impl<'a> AsMut<Lifecycle> for LifecycleRef<'a> {
+    fn as_mut(&mut self) -> &mut Lifecycle {
+        unsafe {
+            self.ptr.array[self.index].as_mut().unwrap_unchecked()
+        }
+    }
+}
+
+impl<'a> DerefMut for LifecycleRef<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe {
+            self.ptr.array[self.index].as_mut().unwrap_unchecked()
+        }
     }
 }
 
@@ -107,6 +228,83 @@ pub(crate) struct Uring {
 
     // TODO
     // waker_receiver: flume::Re
+}
+
+impl Uring {
+    fn tick(&mut self) {
+        let mut cq = self.uring.completion();
+        cq.sync();
+
+        for cqe in cq {
+            // TODO 什么JB意思
+            if cqe.user_data() >= u64::MAX - 2 {
+                if cqe.user_data() == u64::MAX -2 {
+                    self.is_eventfd_in_ring = false;
+                }
+                continue;
+            }
+            let index = cqe.user_data() as usize;
+            self.ops.complete(index, get_cqe_result(&cqe), cqe.flags());
+        }
+    }
+
+    /// 提交任务
+    fn submit(&mut self) -> io::Result<()> {
+        loop {
+            match self.uring.submit() {
+                Ok(_) => {
+                    self.uring.submission().sync();
+                    return Ok(());
+                }
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::Other
+                        // || e.kind() == io::ErrorKind::ResourceBusy
+                    {
+                         self.tick();
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+    }
+
+    /// 创建新io操作op
+    fn new_op<T>(data: T, inner: &mut Uring, driver: &ThreadLocalUring) -> Op<T> {
+        Op{
+            driver: driver.uring.clone(),
+            index: inner.ops.insert() as usize,
+            data: Some(data),
+        }
+    }
+
+    /// 提交任务和data
+    pub(crate) fn submit_with_data<T>(this: &Rc<UnsafeCell<Uring>>, data: T) -> io::Result<Op<T>>
+    where T: OpAble,
+    {
+        let mut inner = unsafe { &mut *this.get() };
+        // 如果提交队列满了，就提交所有事件给linux内核
+        if inner.uring.submission().is_full() {
+            inner.submit()?;
+        }
+
+        // 创建新的operation
+        let mut op = Self::new_op(data, inner, &ThreadLocalUring{uring:this.clone()});
+
+        // 创建SQE
+        let data = unsafe { op.data.as_mut().unwrap_unchecked() };
+        let sqe = OpAble::uring_op(data).user_data(op.index as u64);
+
+        // 取得sq
+        let mut sq = inner.uring.submission();
+        unsafe {
+            if sq.push(&sqe).is_err() {
+                unimplemented!("when is this hit")
+            }
+        }
+
+        Ok(op)
+    }
 }
 
 /// 封装iouring的driver
@@ -161,5 +359,15 @@ impl IoUringDriver {
 
         // TODO Register unpark handle
         Ok(driver)
+    }
+}
+
+#[inline]
+fn get_cqe_result(cqe: &cqueue::Entry) -> io::Result<u32> {
+    let res = cqe.result();
+    if res >= 0 {
+        Ok(res as u32)
+    } else {
+        Err(io::Error::from_raw_os_error(-res))
     }
 }

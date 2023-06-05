@@ -24,7 +24,7 @@ impl EventWaker {
         // 没有被唤醒时，需要向eventFD中写入数据
         let buf = 0x1u64.to_ne_bytes();
         unsafe {
-            libc::write(self.event_fd, buf.as_ptr() as *const c_void, buf.len());
+            libc::write(self.eventfd, buf.as_ptr() as *const c_void, buf.len());
             Ok(())
         }
     }
@@ -32,6 +32,6 @@ impl EventWaker {
 
 impl AsRawFd for EventWaker {
     fn as_raw_fd(&self) -> RawFd {
-        self.event_fd
+        self.eventfd
     }
 }
