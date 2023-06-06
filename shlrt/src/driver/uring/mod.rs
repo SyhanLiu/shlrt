@@ -2,22 +2,20 @@ use std::cell::{RefCell, UnsafeCell};
 use std::io;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::{Deref, DerefMut};
-use std::os::fd::RawFd;
+use std::os::fd::{AsRawFd, RawFd};
 use std::ptr::addr_of_mut;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use io_uring::cqueue;
 use io_uring::types::Timespec;
-use libc::eventfd;
+use libc::{eventfd, option, timespec};
+use crate::driver::Driver;
 use crate::driver::op::{CompletionMeta, Op, OpAble};
 use crate::driver::uring::lifecycle::Lifecycle;
 
 mod waker;
 mod lifecycle;
-
-/// TLS变量，每个线程一个io_uring实例
-// thread_local!(pub(crate) static CURRENT = ThreadLocalUring{});
 
 pub(crate) struct ThreadLocalUring {
     uring: std::rc::Rc<std::cell::UnsafeCell<Uring>>,
@@ -81,7 +79,7 @@ impl Ops {
     }
 
     /// 根据index获取，在数组中的指针和位置
-    pub(crate) unsafe fn get(&mut self, index: usize) -> Option<LifecycleRef> {
+    pub(crate) fn get(&mut self, index: usize) -> Option<LifecycleRef> {
         return if let Some(_) = self.array.get(index) {
             let mut lc = LifecycleRef { index, ptr: self };
             Some(lc)
@@ -293,17 +291,62 @@ impl Uring {
 
         // 创建SQE
         let data = unsafe { op.data.as_mut().unwrap_unchecked() };
+        // 通过sqe中的 user_data 字段索引存入ops中的Operation
         let sqe = OpAble::uring_op(data).user_data(op.index as u64);
 
         // 取得sq
         let mut sq = inner.uring.submission();
         unsafe {
-            if sq.push(&sqe).is_err() {
-                unimplemented!("when is this hit")
+            // 讲sqe放入sq中
+            match sq.push(&sqe) {
+                Ok(_) => {},
+                Err(err) => {
+                    panic!("push sqe error!")
+                },
             }
         }
 
         Ok(op)
+    }
+
+    /// 轮询操作
+    pub(crate) fn poll_op<'a>(this: &Rc<UnsafeCell<Uring>>, index: usize, cx: &mut Context<'a>) -> Poll<CompletionMeta> {
+        let uring = unsafe {&mut (*this.get())};
+        let lifecycle = unsafe {uring.ops.get(index).unwrap_unchecked()};
+        lifecycle.poll_op(cx)
+    }
+
+    /// 清理操作
+    pub(crate) fn drop_op<T: 'static>(this: &Rc<UnsafeCell<Uring>>, index: usize, data: &mut Option<T>) {
+        let uring = unsafe {&mut (*this.get())};
+        if index == usize::MAX {
+            // 已经完成
+            return;
+        }
+        if let Some(lifecycle) = uring.ops.get(index) {
+            let _ = lifecycle.drop_op(data);
+        }
+    }
+
+    pub(crate) unsafe fn cancel_op(this: &Rc<UnsafeCell<Uring>>, index: usize) {
+        let uring = unsafe {&mut (*this.get())};
+
+        // 讲user_data设置为u64::MAX表示该操作已经取消
+        let cancel = io_uring::opcode::AsyncCancel::new(index as u64).build().user_data(u64::MAX);
+
+        // 可能会因为sq满了导致放入sqe失败，提交一次在放入sqe。
+        if uring.uring.submission().push(&cancel).is_err() {
+            let _ = uring.submit();
+            let _ = uring.uring.submission().push(&cancel);
+        }
+    }
+}
+
+impl Drop for Uring {
+    fn drop(&mut self) {
+        unsafe {
+            ManuallyDrop::drop(&mut self.uring);
+        };
     }
 }
 
@@ -359,6 +402,41 @@ impl IoUringDriver {
 
         // TODO Register unpark handle
         Ok(driver)
+    }
+}
+
+// TODO Driver
+// impl Driver for IoUringDriver {
+//
+// }
+
+impl AsRawFd for IoUringDriver {
+    fn as_raw_fd(&self) -> RawFd {
+        unsafe {
+            (*self.uring.get()).uring.as_raw_fd()
+        }
+    }
+}
+
+impl Drop for IoUringDriver {
+    fn drop(&mut self) {
+        // 释放时间结构体内存。
+        unsafe {
+            std::ptr::drop_in_place(self.timespec);
+        };
+
+        // 释放eventfd的读buffer。
+        unsafe {
+            std::ptr::drop_in_place(self.eventfd_read_dst);
+        };
+
+        // TODO 清理线程
+        {
+
+
+
+
+        }
     }
 }
 
