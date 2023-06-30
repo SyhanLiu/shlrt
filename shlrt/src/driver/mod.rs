@@ -4,7 +4,7 @@ use std::time::Duration;
 use io_uring;
 
 mod op;
-mod shared_fd;
+pub(crate) mod shared_fd;
 mod uring;
 
 /// Core driver trait.
