@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, quote_spanned, ToTokens};
 use syn::parse::Parser;
-use syn::{DeriveInput, parse_macro_input};
+use syn::{parse_macro_input, DeriveInput};
 
 // 类函数过程宏
 #[proc_macro]
@@ -19,12 +19,13 @@ pub fn derive_answer_fn(_item: TokenStream) -> TokenStream {
         impl #ident {
             pub fn go_to_sleep(&self) {}
         }
-    ).into()
+    )
+    .into()
 }
 
 // 属性宏
 #[proc_macro_attribute]
-pub fn attr_fn(attr: TokenStream, item:TokenStream) -> TokenStream {
+pub fn attr_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     println!("attr: \"{}\"", attr.to_string());
     println!("item: \"{}\"", item.to_string());
     item

@@ -1,7 +1,7 @@
 #![recursion_limit = "1024"]
-use Vec;
-use shlrt_macros::{AnswerFn, make_test};
 use shlrt_macros::attr_fn;
+use shlrt_macros::{make_test, AnswerFn};
+use Vec;
 
 /// item: an item, like a function, struct, module, etc.
 /// block: a block (i.e. a block of statements and/or an expression, surrounded by braces)
@@ -47,7 +47,7 @@ fn test_vec() {
 macro_rules! my_stringify {
     ($e:expr) => {
         stringify!($e)
-    }
+    };
 }
 
 fn test_stringify() {
@@ -64,9 +64,8 @@ fn attr_fn() {}
 #[derive(AnswerFn)]
 struct Ans;
 
-
 fn main() {
     println!("{}", answer());
-    let a = Ans{};
+    let a = Ans {};
     a.go_to_sleep();
 }

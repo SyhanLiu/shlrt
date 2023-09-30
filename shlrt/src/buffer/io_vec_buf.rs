@@ -32,7 +32,6 @@ pub unsafe trait IoVecBuf: Unpin + 'static {
 /// A intermediate struct that impl IoVecBuf and IoVecBufMut.
 #[derive(Clone)]
 pub struct VecBuf {
-    #[cfg(unix)]
     iovecs: Vec<libc::iovec>,
     raw: Vec<Vec<u8>>,
 }
@@ -61,21 +60,14 @@ unsafe impl IoVecBuf for Vec<libc::iovec> {
 
 impl From<Vec<Vec<u8>>> for VecBuf {
     fn from(vs: Vec<Vec<u8>>) -> Self {
-        #[cfg(unix)]
-        {
-            let iovecs = vs
-                .iter()
-                .map(|v| libc::iovec {
-                    iov_base: v.as_ptr() as _,
-                    iov_len: v.len(),
-                })
-                .collect();
-            Self { iovecs, raw: vs }
-        }
-        #[cfg(windows)]
-        {
-            unimplemented!()
-        }
+        let iovecs = vs
+            .iter()
+            .map(|v| libc::iovec {
+                iov_base: v.as_ptr() as _,
+                iov_len: v.len(),
+            })
+            .collect();
+        Self { iovecs, raw: vs }
     }
 }
 

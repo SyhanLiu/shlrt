@@ -11,7 +11,10 @@ pub(crate) struct EventWaker {
 
 impl EventWaker {
     pub(crate) fn new(fd: RawFd) -> Self {
-        EventWaker { eventfd: fd, awake: std::sync::atomic::AtomicBool::new(true) }
+        EventWaker {
+            eventfd: fd,
+            awake: std::sync::atomic::AtomicBool::new(true),
+        }
     }
 
     /// 唤醒操作

@@ -7,6 +7,6 @@ edition = "2021"
 
 [dependencies]
 shlrt-macros = {path= "../shlrt-macros"}
-libc = "0.2.144"
-io-uring = {version = "0.6.0"}
-slab = "0.4.8"
+libc = "0.2.148"
+io-uring = "0.6.2"
+slab = "0.4.9"

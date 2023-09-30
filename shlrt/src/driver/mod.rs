@@ -1,7 +1,7 @@
+use io_uring;
 use std::io;
 use std::mem::ManuallyDrop;
 use std::time::Duration;
-use io_uring;
 
 mod op;
 pub(crate) mod shared_fd;

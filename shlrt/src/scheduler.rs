@@ -1,9 +1,5 @@
 pub(crate) struct Scheduler;
 
-impl Schedule for Scheduler {
+impl Schedule for Scheduler {}
 
-}
-
-pub trait Schedule {
-
-}
+pub trait Schedule {}

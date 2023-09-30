@@ -1,9 +1,9 @@
+use std::fmt::Formatter;
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::{cell::UnsafeCell, io, rc::Rc};
-use std::fmt::Formatter;
 
 /// 封装fd
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct SharedFd {
     inner: Rc<InnerFd>,
 }
@@ -11,12 +11,17 @@ pub(crate) struct SharedFd {
 impl SharedFd {
     /// 新建初始化共享文件描述符结构
     pub(crate) fn new(fd: RawFd) -> io::Result<SharedFd> {
-        Ok(SharedFd{ inner: Rc::new(InnerFd { fd, state: UnsafeCell::new(State::Init) }) })
+        Ok(SharedFd {
+            inner: Rc::new(InnerFd {
+                fd,
+                state: UnsafeCell::new(State::Init),
+            }),
+        })
     }
 
     //
     // pub(crate) fn new_without_register(fd: RawFd) -> SharedFd {
-    // 
+    //
     // }
 }
 

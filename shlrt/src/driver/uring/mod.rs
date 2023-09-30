@@ -1,3 +1,9 @@
+use crate::driver::op::{CompletionMeta, Op, OpAble};
+use crate::driver::uring::lifecycle::Lifecycle;
+use crate::driver::Driver;
+use io_uring::cqueue;
+use io_uring::types::Timespec;
+use libc::{eventfd, option, timespec};
 use std::cell::{RefCell, UnsafeCell};
 use std::io;
 use std::mem::{ManuallyDrop, MaybeUninit};
@@ -7,15 +13,9 @@ use std::ptr::addr_of_mut;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use io_uring::cqueue;
-use io_uring::types::Timespec;
-use libc::{eventfd, option, timespec};
-use crate::driver::Driver;
-use crate::driver::op::{CompletionMeta, Op, OpAble};
-use crate::driver::uring::lifecycle::Lifecycle;
 
-mod waker;
 mod lifecycle;
+mod waker;
 
 pub(crate) struct ThreadLocalUring {
     uring: std::rc::Rc<std::cell::UnsafeCell<Uring>>,
@@ -38,7 +38,7 @@ impl Ops {
 
     fn new_with_max_size(max_size: usize) -> Self {
         let mut array = Vec::<Option<Lifecycle>>::new();
-        for _ in 0..max_size+1 {
+        for _ in 0..max_size + 1 {
             array.push(None);
         }
         Ops {
@@ -62,10 +62,10 @@ impl Ops {
                 index = self.current_index as i64;
                 self.num += 1;
                 self.array[self.current_index] = Some(lifecycle::Lifecycle::Submitted);
-                self.current_index = self.current_index+1 % self.cap;
+                self.current_index = self.current_index + 1 % self.cap;
                 break;
             }
-            self.current_index = self.current_index+1 % self.cap;
+            self.current_index = self.current_index + 1 % self.cap;
         }
         index
     }
@@ -85,13 +85,11 @@ impl Ops {
             Some(lc)
         } else {
             None
-        }
+        };
     }
 
     fn complete(&mut self, index: usize, result: io::Result<u32>, flags: u32) {
-        let lifecycle = unsafe {
-            self.get(index).unwrap_unchecked()
-        };
+        let lifecycle = unsafe { self.get(index).unwrap_unchecked() };
         lifecycle.complete(result, flags);
     }
 }
@@ -108,53 +106,53 @@ impl<'a> LifecycleRef<'a> {
 
     /// io_uring操作完成时执行该函数，修改状态，或者唤醒协程
     pub(crate) fn complete(mut self, result: io::Result<u32>, flags: u32) {
-        let mut_ref = &mut(*self);
+        let mut_ref = &mut (*self);
         match mut_ref {
             Lifecycle::Submitted => {
                 *mut_ref = Lifecycle::Completed(result, flags);
-            },
+            }
             Lifecycle::Waiting(_) => {
                 let old = std::mem::replace(mut_ref, Lifecycle::Completed(result, flags));
                 match old {
                     Lifecycle::Waiting(waker) => {
                         waker.wake();
-                    },
+                    }
                     _ => unsafe { std::hint::unreachable_unchecked() },
                 };
-            },
+            }
             Lifecycle::Ignored(_) => {
                 self.remove();
-            },
+            }
             Lifecycle::Completed(..) => unsafe { std::hint::unreachable_unchecked() },
         }
     }
 
     /// 轮询操作事件
     pub(crate) fn poll_op(mut self, cx: &mut Context<'a>) -> Poll<CompletionMeta> {
-        let mut_ref = &mut(*self);
+        let mut_ref = &mut (*self);
         match mut_ref {
             Lifecycle::Submitted => {
                 *mut_ref = Lifecycle::Waiting(cx.waker().clone());
                 return Poll::Pending;
-            },
+            }
             Lifecycle::Waiting(waker) => {
                 if !waker.will_wake(cx.waker()) {
                     *mut_ref = Lifecycle::Waiting(cx.waker().clone());
                 }
                 return Poll::Pending;
-            },
+            }
             _ => {}
         }
 
         match self.remove() {
-            Lifecycle::Completed(result, flags) => Poll::Ready(CompletionMeta{ result, flags }),
-            _ => unsafe { std::hint::unreachable_unchecked() }
+            Lifecycle::Completed(result, flags) => Poll::Ready(CompletionMeta { result, flags }),
+            _ => unsafe { std::hint::unreachable_unchecked() },
         }
     }
 
     // TODO 这个接口有什么用呢？？？？？？
     pub(crate) fn drop_op<T: 'static>(mut self, data: &mut Option<T>) -> bool {
-        let mut_ref = &mut(*self);
+        let mut_ref = &mut (*self);
         match mut_ref {
             Lifecycle::Submitted | Lifecycle::Waiting(_) => {
                 if let Some(data) = data.take() {
@@ -168,9 +166,7 @@ impl<'a> LifecycleRef<'a> {
             Lifecycle::Completed(..) => {
                 self.remove();
             }
-            Lifecycle::Ignored(_) => {
-                unsafe { std::hint::unreachable_unchecked() }
-            }
+            Lifecycle::Ignored(_) => unsafe { std::hint::unreachable_unchecked() },
         }
         true
     }
@@ -178,9 +174,7 @@ impl<'a> LifecycleRef<'a> {
 
 impl<'a> AsRef<Lifecycle> for LifecycleRef<'a> {
     fn as_ref(&self) -> &Lifecycle {
-        unsafe {
-            self.ptr.array[self.index].as_ref().unwrap_unchecked()
-        }
+        unsafe { self.ptr.array[self.index].as_ref().unwrap_unchecked() }
     }
 }
 
@@ -188,25 +182,19 @@ impl<'a> Deref for LifecycleRef<'a> {
     type Target = Lifecycle;
 
     fn deref(&self) -> &Self::Target {
-        unsafe {
-            self.ptr.array[self.index].as_ref().unwrap_unchecked()
-        }
+        unsafe { self.ptr.array[self.index].as_ref().unwrap_unchecked() }
     }
 }
 
 impl<'a> AsMut<Lifecycle> for LifecycleRef<'a> {
     fn as_mut(&mut self) -> &mut Lifecycle {
-        unsafe {
-            self.ptr.array[self.index].as_mut().unwrap_unchecked()
-        }
+        unsafe { self.ptr.array[self.index].as_mut().unwrap_unchecked() }
     }
 }
 
 impl<'a> DerefMut for LifecycleRef<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe {
-            self.ptr.array[self.index].as_mut().unwrap_unchecked()
-        }
+        unsafe { self.ptr.array[self.index].as_mut().unwrap_unchecked() }
     }
 }
 
@@ -223,7 +211,6 @@ pub(crate) struct Uring {
 
     /// event fd 是否在ring中
     is_eventfd_in_ring: bool,
-
     // TODO
     // waker_receiver: flume::Re
 }
@@ -236,7 +223,7 @@ impl Uring {
         for cqe in cq {
             // TODO 什么JB意思
             if cqe.user_data() >= u64::MAX - 2 {
-                if cqe.user_data() == u64::MAX -2 {
+                if cqe.user_data() == u64::MAX - 2 {
                     self.is_eventfd_in_ring = false;
                 }
                 continue;
@@ -256,9 +243,9 @@ impl Uring {
                 }
                 Err(e) => {
                     if e.kind() == io::ErrorKind::Other
-                        // || e.kind() == io::ErrorKind::ResourceBusy
+                    // || e.kind() == io::ErrorKind::ResourceBusy
                     {
-                         self.tick();
+                        self.tick();
                     } else {
                         return Err(e);
                     }
@@ -269,7 +256,7 @@ impl Uring {
 
     /// 创建新io操作op
     fn new_op<T>(data: T, inner: &mut Uring, driver: &ThreadLocalUring) -> Op<T> {
-        Op{
+        Op {
             driver: driver.uring.clone(),
             index: inner.ops.insert() as usize,
             data: Some(data),
@@ -278,7 +265,8 @@ impl Uring {
 
     /// 提交任务和data
     pub(crate) fn submit_with_data<T>(this: &Rc<UnsafeCell<Uring>>, data: T) -> io::Result<Op<T>>
-    where T: OpAble,
+    where
+        T: OpAble,
     {
         let mut inner = unsafe { &mut *this.get() };
         // 如果提交队列满了，就提交所有事件给linux内核
@@ -287,7 +275,13 @@ impl Uring {
         }
 
         // 创建新的operation
-        let mut op = Self::new_op(data, inner, &ThreadLocalUring{uring:this.clone()});
+        let mut op = Self::new_op(
+            data,
+            inner,
+            &ThreadLocalUring {
+                uring: this.clone(),
+            },
+        );
 
         // 创建SQE
         let data = unsafe { op.data.as_mut().unwrap_unchecked() };
@@ -299,10 +293,10 @@ impl Uring {
         unsafe {
             // 讲sqe放入sq中
             match sq.push(&sqe) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(err) => {
                     panic!("push sqe error!")
-                },
+                }
             }
         }
 
@@ -310,15 +304,23 @@ impl Uring {
     }
 
     /// 轮询操作
-    pub(crate) fn poll_op<'a>(this: &Rc<UnsafeCell<Uring>>, index: usize, cx: &mut Context<'a>) -> Poll<CompletionMeta> {
-        let uring = unsafe {&mut (*this.get())};
-        let lifecycle = unsafe {uring.ops.get(index).unwrap_unchecked()};
+    pub(crate) fn poll_op<'a>(
+        this: &Rc<UnsafeCell<Uring>>,
+        index: usize,
+        cx: &mut Context<'a>,
+    ) -> Poll<CompletionMeta> {
+        let uring = unsafe { &mut (*this.get()) };
+        let lifecycle = unsafe { uring.ops.get(index).unwrap_unchecked() };
         lifecycle.poll_op(cx)
     }
 
     /// 清理操作
-    pub(crate) fn drop_op<T: 'static>(this: &Rc<UnsafeCell<Uring>>, index: usize, data: &mut Option<T>) {
-        let uring = unsafe {&mut (*this.get())};
+    pub(crate) fn drop_op<T: 'static>(
+        this: &Rc<UnsafeCell<Uring>>,
+        index: usize,
+        data: &mut Option<T>,
+    ) {
+        let uring = unsafe { &mut (*this.get()) };
         if index == usize::MAX {
             // 已经完成
             return;
@@ -329,10 +331,12 @@ impl Uring {
     }
 
     pub(crate) unsafe fn cancel_op(this: &Rc<UnsafeCell<Uring>>, index: usize) {
-        let uring = unsafe {&mut (*this.get())};
+        let uring = unsafe { &mut (*this.get()) };
 
         // 讲user_data设置为u64::MAX表示该操作已经取消
-        let cancel = io_uring::opcode::AsyncCancel::new(index as u64).build().user_data(u64::MAX);
+        let cancel = io_uring::opcode::AsyncCancel::new(index as u64)
+            .build()
+            .user_data(u64::MAX);
 
         // 可能会因为sq满了导致放入sqe失败，提交一次在放入sqe。
         if uring.uring.submission().push(&cancel).is_err() {
@@ -371,7 +375,10 @@ impl IoUringDriver {
         Self::new_with_entries(b, Self::DEFAULT_ENTRIES)
     }
 
-    pub(crate) fn new_with_entries(b: &io_uring::Builder, entries_num: u32) -> io::Result<IoUringDriver> {
+    pub(crate) fn new_with_entries(
+        b: &io_uring::Builder,
+        entries_num: u32,
+    ) -> io::Result<IoUringDriver> {
         let io_uring = ManuallyDrop::new(b.build(entries_num)?);
 
         let waker_fd = {
@@ -383,8 +390,7 @@ impl IoUringDriver {
 
         // TODO waker_sender
 
-
-        let uring = Rc::new(UnsafeCell::new(Uring{
+        let uring = Rc::new(UnsafeCell::new(Uring {
             ops: Ops::new(),
             uring: io_uring,
             shared_waker: Arc::new(waker::EventWaker::new(waker_fd)),
@@ -393,7 +399,7 @@ impl IoUringDriver {
 
         // TODO TLS thread id
         let thread_id = 0;
-        let driver = IoUringDriver{
+        let driver = IoUringDriver {
             uring,
             timespec: Box::leak(Box::new(Timespec::new())) as *mut Timespec,
             eventfd_read_dst: Box::leak(Box::new([0u8; 8])) as *mut u8,
@@ -412,9 +418,7 @@ impl IoUringDriver {
 
 impl AsRawFd for IoUringDriver {
     fn as_raw_fd(&self) -> RawFd {
-        unsafe {
-            (*self.uring.get()).uring.as_raw_fd()
-        }
+        unsafe { (*self.uring.get()).uring.as_raw_fd() }
     }
 }
 
@@ -431,12 +435,7 @@ impl Drop for IoUringDriver {
         };
 
         // TODO 清理线程
-        {
-
-
-
-
-        }
+        {}
     }
 }
 
