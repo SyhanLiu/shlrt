@@ -1,4 +1,4 @@
-mod buffer;
+pub mod buf;
 mod driver;
 mod io;
 mod scheduler;

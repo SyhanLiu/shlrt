@@ -25,8 +25,8 @@ pub trait Driver {
     // fn unpark(&self) -> Self::Unpark;
 }
 
-/// TODO TLS变量，每个线程一个io_uring实例
-thread_local!(pub(crate) static CURRENT: uring::ThreadLocalUring = uring::ThreadLocalUring{
-    uring: std::rc::Rc::new(std::cell::UnsafeCell::new(std::ptr::null())),
-});
+// TODO TLS变量，每个线程一个io_uring实例
+// thread_local!(pub(crate) static CURRENT: uring::ThreadLocalUring = uring::ThreadLocalUring{
+//     uring: std::rc::Rc::new(std::cell::UnsafeCell::new(std::ptr::null())),
+// });
 // TODO 写TMD的宏
