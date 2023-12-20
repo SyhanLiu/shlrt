@@ -1,11 +1,15 @@
 use io_uring;
 use std::io;
-use std::mem::ManuallyDrop;
 use std::time::Duration;
+use crate::driver::uring::UringInner;
+use crate::scoped_thread_local;
 
 mod op;
 pub(crate) mod shared_fd;
 mod uring;
+mod util;
+
+scoped_thread_local!(pub(crate) static CURRENT: Inner);
 
 /// Core driver trait.
 pub trait Driver {
@@ -30,3 +34,5 @@ pub trait Driver {
 //     uring: std::rc::Rc::new(std::cell::UnsafeCell::new(std::ptr::null())),
 // });
 // TODO 写TMD的宏
+
+pub(crate) struct Inner(std::rc::Rc<std::cell::UnsafeCell<UringInner>>);

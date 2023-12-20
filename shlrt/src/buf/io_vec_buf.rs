@@ -41,12 +41,13 @@ unsafe impl IoVecBuf for Vec<libc::iovec> {
 
 impl From<Vec<Vec<u8>>> for VecBuf {
     fn from(vv: Vec<Vec<u8>>) -> Self {
-        let iovecs = vv.iter().map(|v| {
-            libc::iovec{
+        let iovecs = vv
+            .iter()
+            .map(|v| libc::iovec {
                 iov_base: v.as_ptr() as *mut c_void,
                 iov_len: v.len(),
-            }
-        }).collect();
+            })
+            .collect();
         Self { iovecs, raw: vv }
     }
 }

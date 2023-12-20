@@ -1,5 +1,5 @@
+use super::{IoBuf, IoBufMut, IoVecBuf, IoVecBufMut};
 use std::ops;
-use super::{IoVecBuf, IoVecBufMut, IoBuf, IoBufMut};
 
 /// 使用 [IoBuf::slice] 创建Slice
 pub struct SliceMut<T> {

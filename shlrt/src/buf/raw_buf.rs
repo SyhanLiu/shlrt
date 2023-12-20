@@ -1,5 +1,5 @@
-use std::ptr::null;
 use super::{IoBuf, IoBufMut, IoVecBuf, IoVecBufMut};
+use std::ptr::null;
 
 /// 要保证ptr指向的内存区一定可用
 pub struct RawBuf {

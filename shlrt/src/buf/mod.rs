@@ -15,5 +15,7 @@ pub(crate) use vec_wrapper::{read_vec_meta, write_vec_meta};
 
 pub(crate) fn deref(buf: &impl IoBuf) -> &[u8] {
     /// 强转为切片引用
-    unsafe { std::slice::from_raw_parts(buf.read_ptr(), buf.bytes_init()) }
+    unsafe {
+        std::slice::from_raw_parts(buf.read_ptr(), buf.bytes_init())
+    }
 }

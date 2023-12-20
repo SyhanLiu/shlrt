@@ -1,13 +1,12 @@
-use crate::driver;
-use crate::driver::uring::Uring;
 use std::io;
+use crate::driver::Inner;
 
 mod accept;
 
 /// 封装io_uring的operation
 pub(crate) struct Op<T: 'static> {
     // 所属的io_uring
-    pub(super) driver: std::rc::Rc<std::cell::UnsafeCell<Uring>>,
+    pub(super) driver: Inner,
     // 所属的Op队列
     pub(super) index: usize,
     // op操作包含的data信息

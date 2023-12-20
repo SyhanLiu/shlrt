@@ -1,7 +1,7 @@
-use std::ops;
 use super::Slice;
 use crate::buf::slice::SliceMut;
 use core::ops::Bound;
+use std::ops;
 
 pub unsafe trait IoBuf: Unpin + 'static {
     /// 返回读缓冲区的指针
