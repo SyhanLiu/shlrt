@@ -360,7 +360,7 @@ impl IoUringDriver {
 
 impl Driver for IoUringDriver {
     fn with<R>(&self, f: impl FnOnce() -> R) -> R {
-        let inner = Inner::Uring(self.uring.clone());
+        let inner = Inner(self.uring.clone());
         CURRENT.set(&inner, f)
     }
 

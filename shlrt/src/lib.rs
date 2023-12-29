@@ -10,5 +10,6 @@ mod task;
 mod utils;
 mod builder;
 mod macros;
+mod fs;
 
 pub type BufResult<T, B> = (std::io::Result<T>, B);

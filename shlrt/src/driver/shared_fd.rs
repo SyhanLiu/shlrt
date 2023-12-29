@@ -19,11 +19,17 @@ impl SharedFd {
         })
     }
 
+    pub(crate) fn raw_fd(&self) -> RawFd {
+        self.inner.fd
+    }
+
     //
     // pub(crate) fn new_without_register(fd: RawFd) -> SharedFd {
     //
     // }
 }
+
+
 
 struct InnerFd {
     fd: RawFd,
